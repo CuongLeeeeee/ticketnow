@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using TicketNow.Catalog.Domain;
 using TicketNow.Catalog.Infrastructure.Persistence;
+using TicketNow.BuildingBlocks.Auth;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +20,7 @@ builder.Services.AddStackExchangeRedisCache(o =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
+builder.Services.AddTicketNowJwt(builder.Configuration);
 
 var app = builder.Build();
 
@@ -30,6 +32,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapHealthChecks("/health");
 
 // ---------- Public ----------
@@ -75,7 +79,7 @@ events.MapGet("/{id:guid}", async (Guid id, CatalogDbContext db, IDistributedCac
 });
 
 
-var admin = app.MapGroup("/api/admin/events");
+var admin = app.MapGroup("/api/admin/events").RequireAuthorization("admin");
 
 admin.MapPost("", async (CreateEventRequest req, CatalogDbContext db) =>
 {
@@ -84,8 +88,8 @@ admin.MapPost("", async (CreateEventRequest req, CatalogDbContext db) =>
         Title = req.Title,
         Artist = req.Artist,
         Venue = req.Venue,
-        StartsAt = req.StartsAt,
-        SalesStartAt = req.SalesStartAt
+        StartsAt = req.StartsAt.ToUniversalTime(),
+        SalesStartAt = req.SalesStartAt.ToUniversalTime()
     };
     db.Events.Add(ev);
     await db.SaveChangesAsync();
