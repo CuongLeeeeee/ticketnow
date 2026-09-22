@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\TicketNow.Catalog.Infrastructure\TicketNow.Catalog.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\Shared\TicketNow.BuildingBlocks\TicketNow.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\..\Shared\TicketNow.Contracts\TicketNow.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

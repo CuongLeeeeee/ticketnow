@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using TicketNow.Catalog.Domain;
 using TicketNow.Catalog.Infrastructure.Persistence;
 using TicketNow.BuildingBlocks.Auth;
+using TicketNow.Contracts.Catalog;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,7 +70,7 @@ events.MapGet("/{id:guid}", async (Guid id, CatalogDbContext db, IDistributedCac
         ev.TicketTypes.Select(t =>
             new TicketTypeDto(t.Id, t.Name, t.Price, t.Currency, t.TotalQuantity, t.MaxPerUser)).ToList());
 
-    var json = JsonSerializer.Serialize(dto);
+    var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions(JsonSerializerDefaults.Web));
     await cache.SetStringAsync(key, json, new DistributedCacheEntryOptions
     {
         AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60)
@@ -122,19 +123,15 @@ admin.MapPost("/{id:guid}/publish", async (Guid id, CatalogDbContext db, IDistri
 
     ev.Status = EventStatus.Published;
 
-    
+
     foreach (var tt in ev.TicketTypes)
     {
         db.OutboxMessages.Add(new OutboxMessage
         {
-            Type = "TicketTypePublished",
-            Payload = JsonSerializer.Serialize(new
-            {
-                TicketTypeId = tt.Id,
-                EventId = ev.Id,
-                Quantity = tt.TotalQuantity,
-                tt.MaxPerUser
-            })
+            Type = nameof(TicketTypePublished),
+            Payload = JsonSerializer.Serialize(new TicketTypePublished(
+                tt.Id, ev.Id, tt.Name, tt.Price, tt.Currency,
+                tt.TotalQuantity, tt.MaxPerUser, ev.SalesStartAt))
         });
     }
 

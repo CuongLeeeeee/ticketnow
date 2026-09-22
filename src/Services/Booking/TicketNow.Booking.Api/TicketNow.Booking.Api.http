@@ -1,0 +1,6 @@
+@TicketNow.Booking.Api_HostAddress = http://localhost:5042
+
+GET {{TicketNow.Booking.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
