@@ -5,6 +5,7 @@ using TicketNow.Catalog.Domain;
 using TicketNow.Catalog.Infrastructure.Persistence;
 using TicketNow.BuildingBlocks.Auth;
 using TicketNow.Contracts.Catalog;
+using TicketNow.BuildingBlocks.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +23,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
 builder.Services.AddTicketNowJwt(builder.Configuration);
+builder.Services.AddTicketNowMessaging(builder.Configuration, "catalog");
+builder.Services.AddOutboxPublisher<CatalogDbContext>();
 
 var app = builder.Build();
 

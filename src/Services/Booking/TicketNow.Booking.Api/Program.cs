@@ -1,11 +1,14 @@
-﻿using System.Security.Claims;
-using System.Text.Json;
+﻿using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using System.Text.Json;
+using TicketNow.Booking.Api.Application;
 using TicketNow.Booking.Api.BackgroundServices;
 using TicketNow.Booking.Domain;
 using TicketNow.Booking.Infrastructure.Persistence;
 using TicketNow.Booking.Infrastructure.Redis;
 using TicketNow.BuildingBlocks.Auth;
+using TicketNow.BuildingBlocks.Messaging;
 using TicketNow.Contracts.Booking;
 using TicketNow.Contracts.Catalog;
 
@@ -20,7 +23,10 @@ builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
 builder.Services.AddSingleton<InventoryStore>();
 builder.Services.AddSingleton<IdempotencyStore>();
 builder.Services.AddHostedService<InventoryRebuilder>();
-
+builder.Services.AddTicketNowMessaging(builder.Configuration, "booking",
+    x => x.AddConsumers(typeof(Program).Assembly));
+builder.Services.AddOutboxPublisher<BookingDbContext>();
+builder.Services.AddHostedService<OrderExpirySweeper>();
 builder.Services.AddTicketNowJwt(builder.Configuration);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -40,7 +46,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");
 
-const int HoldMinutes = 10;
+var holdMinutes = builder.Configuration.GetValue("Booking:HoldMinutes", 10);
 var webJson = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
 // ================= ORDERS =================
@@ -118,7 +124,7 @@ orders.MapPost("", async (
         EventId = first.EventId,
         Currency = first.Currency,
         IdempotencyKey = idemKey,
-        ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(HoldMinutes),
+        ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(holdMinutes),
         Items = req.Items.Select(i => new OrderItem
         {
             TicketTypeId = i.TicketTypeId,
@@ -145,7 +151,7 @@ orders.MapPost("", async (
     {
         // Redis đã trừ vé nhưng DB không ghi được => phải trả vé lại, nếu không vé sẽ "bốc hơi"
         log.LogError(ex, "Ghi order thất bại, hoàn vé trên Redis cho user {UserId}", userId);
-        await inventory.ReleaseAsync(userId, req.Items.Select(i => (i.TicketTypeId, i.Quantity)));
+        await inventory.ReleaseOnceAsync(order.Id, userId, req.Items.Select(i => (i.TicketTypeId, i.Quantity)));
         await idempotency.AbortAsync(userId, idemKey);
         throw;
     }
@@ -178,62 +184,24 @@ orders.MapGet("/me", async (ClaimsPrincipal principal, BookingDbContext db) =>
     return Results.Ok(list.Select(ToDto));
 });
 
-orders.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal principal, BookingDbContext db, InventoryStore inventory) =>
+orders.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal principal, BookingDbContext db) =>
 {
     var userId = GetUserId(principal);
-    var order = await db.Orders.AsNoTracking().Include(o => o.Items)
-        .FirstOrDefaultAsync(o => o.Id == id && o.UserId == userId);
-    if (order is null) return Results.NotFound();
+    if (!await db.Orders.AnyAsync(o => o.Id == id && o.UserId == userId))
+        return Results.NotFound();
 
     await using var tx = await db.Database.BeginTransactionAsync();
-
-    // Chuyển trạng thái CÓ ĐIỀU KIỆN: nếu hủy và hết hạn xảy ra cùng lúc,
-    // chỉ một bên thắng => vé không bao giờ bị hoàn hai lần
-    var changed = await db.Orders
-        .Where(o => o.Id == id && o.Status == OrderStatus.AwaitingPayment)
-        .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, OrderStatus.Cancelled));
-
-    if (changed == 0)
+    if (!await OrderReleaser.TryReleaseAsync(db, id, OrderStatus.Cancelled, ReleaseReasons.UserCancelled, default))
         return Results.Conflict("Chỉ hủy được đơn đang chờ thanh toán");
 
-    db.OutboxMessages.Add(new OutboxMessage
-    {
-        Type = nameof(OrderCancelled),
-        Payload = JsonSerializer.Serialize(new OrderCancelled(order.Id, userId, "UserCancelled"))
-    });
     await db.SaveChangesAsync();
     await tx.CommitAsync();
 
-    await inventory.ReleaseAsync(userId, order.Items.Select(i => (i.TicketTypeId, i.Quantity)));
     return Results.NoContent();
 });
 
 // ================= ADMIN INVENTORY =================
 var adminInventory = app.MapGroup("/api/admin/inventory").RequireAuthorization("admin");
-
-// TẠM THỜI cho tuần 3. Tuần 4 thay bằng consumer RabbitMQ nhận TicketTypePublished.
-adminInventory.MapPost("/sync", async (TicketTypePublished msg, BookingDbContext db, InventoryStore inventory) =>
-{
-    var item = await db.Inventory.FindAsync(msg.TicketTypeId);
-    if (item is null)
-    {
-        item = new InventoryItem { TicketTypeId = msg.TicketTypeId };
-        db.Inventory.Add(item);
-    }
-
-    item.EventId = msg.EventId;
-    item.Name = msg.Name;
-    item.Price = msg.Price;
-    item.Currency = msg.Currency;
-    item.MaxPerUser = msg.MaxPerUser;
-    item.SalesStartAt = msg.SalesStartAt.ToUniversalTime();
-    item.Total = msg.TotalQuantity;
-    item.UpdatedAt = DateTimeOffset.UtcNow;
-    await db.SaveChangesAsync();
-
-    var initialized = await inventory.InitAvailableAsync(item.TicketTypeId, item.Total - item.Sold, overwrite: false);
-    return Results.Ok(new { item.TicketTypeId, item.Name, RedisInitialized = initialized });
-});
 
 adminInventory.MapGet("/{ticketTypeId:guid}", async (Guid ticketTypeId, BookingDbContext db, InventoryStore inventory) =>
 {

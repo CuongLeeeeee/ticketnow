@@ -1,4 +1,6 @@
-﻿namespace TicketNow.Booking.Domain;
+﻿using System.Text.Json;
+
+namespace TicketNow.Booking.Domain;
 
 public class OutboxMessage
 {
@@ -7,4 +9,10 @@ public class OutboxMessage
     public string Payload { get; set; } = default!;
     public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ProcessedAt { get; set; }
+
+    public static OutboxMessage From<T>(T message) where T : notnull => new()
+    {
+        Type = typeof(T).Name,
+        Payload = JsonSerializer.Serialize(message)
+    };
 }

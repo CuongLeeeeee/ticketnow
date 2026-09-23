@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TicketNow.Booking.Domain\TicketNow.Booking.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Shared\TicketNow.BuildingBlocks\TicketNow.BuildingBlocks.csproj" />
   </ItemGroup>
 
 </Project>

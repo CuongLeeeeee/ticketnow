@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 using TicketNow.Booking.Domain;
+using TicketNow.BuildingBlocks.Messaging;
 
 namespace TicketNow.Booking.Infrastructure.Persistence;
 
@@ -57,5 +58,7 @@ public class BookingDbContext(DbContextOptions<BookingDbContext> options) : DbCo
             e.Property(x => x.Payload).HasColumnType("jsonb");
             e.HasIndex(x => x.ProcessedAt);
         });
+
+        b.AddInbox();
     }
 }

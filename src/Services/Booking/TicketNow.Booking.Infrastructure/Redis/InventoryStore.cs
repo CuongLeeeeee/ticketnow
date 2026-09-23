@@ -32,12 +32,16 @@ public sealed class InventoryStore(IConnectionMultiplexer redis)
         return {1, 0}
         """;
 
-    private const string ReleaseScript = """
-        for i = 1, #KEYS / 2 do
-          local qty = tonumber(ARGV[i])
-          redis.call('INCRBY', KEYS[2*i-1], qty)
-          local left = redis.call('DECRBY', KEYS[2*i], qty)
-          if left <= 0 then redis.call('DEL', KEYS[2*i]) end
+        // KEYS[1] = released:{orderId}   ARGV[1] = TTL (giây)
+        // KEYS[2i] = inv:{tt}, KEYS[2i+1] = inv:user:{tt}:{user}   ARGV[i+1] = số lượng
+        private const string ReleaseOnceScript = """
+        if not redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then return 0 end
+        local n = (#KEYS - 1) / 2
+        for i = 1, n do
+          local qty = tonumber(ARGV[i + 1])
+          redis.call('INCRBY', KEYS[2*i], qty)
+          local left = redis.call('DECRBY', KEYS[2*i + 1], qty)
+          if left <= 0 then redis.call('DEL', KEYS[2*i + 1]) end
         end
         return 1
         """;
@@ -68,18 +72,24 @@ public sealed class InventoryStore(IConnectionMultiplexer redis)
         };
     }
 
-    public async Task ReleaseAsync(Guid userId, IEnumerable<(Guid TicketTypeId, int Quantity)> lines)
+    public async Task<bool> ReleaseOnceAsync(Guid orderId, Guid userId, IEnumerable<(Guid TicketTypeId, int Quantity)> lines)
     {
         var list = lines.ToList();
-        var keys = new RedisKey[list.Count * 2];
-        var args = new RedisValue[list.Count];
+        var keys = new RedisKey[1 + list.Count * 2];
+        var args = new RedisValue[1 + list.Count];
+
+        keys[0] = $"released:{orderId}";
+        args[0] = (int)TimeSpan.FromDays(7).TotalSeconds;
+
         for (var i = 0; i < list.Count; i++)
         {
-            keys[2 * i] = AvailableKey(list[i].TicketTypeId);
-            keys[2 * i + 1] = UserKey(list[i].TicketTypeId, userId);
-            args[i] = list[i].Quantity;
+            keys[1 + 2 * i] = AvailableKey(list[i].TicketTypeId);
+            keys[2 + 2 * i] = UserKey(list[i].TicketTypeId, userId);
+            args[1 + i] = list[i].Quantity;
         }
-        await _db.ScriptEvaluateAsync(ReleaseScript, keys, args);
+
+        var result = await _db.ScriptEvaluateAsync(ReleaseOnceScript, keys, args);
+        return (int)result == 1;
     }
 
     public Task<bool> InitAvailableAsync(Guid ticketTypeId, int available, bool overwrite) =>
