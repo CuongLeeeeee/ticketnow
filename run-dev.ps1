@@ -6,6 +6,7 @@ $services = @(
     @{ Name = "identity"; Project = "src/Services/Identity/TicketNow.Identity.Api"; Url = "http://localhost:5002" },
     @{ Name = "booking"; Project = "src/Services/Booking/TicketNow.Booking.Api";    Url = "http://localhost:5003" },
     @{ Name = "payment"; Project = "src/Services/Payment/TicketNow.Payment.Api";    Url = "http://localhost:5004" },
+    @{ Name = "notification"; Project = "src/Services/Notification/TicketNow.Notification.Api"; Url = "http://localhost:5005" },
     @{ Name = "gateway";  Project = "src/ApiGateway/TicketNow.Gateway";             Url = "http://localhost:5000" }
     
 )

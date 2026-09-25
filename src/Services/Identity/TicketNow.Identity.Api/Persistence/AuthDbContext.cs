@@ -7,7 +7,7 @@ public class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbContext(
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
-
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>(e =>
@@ -31,6 +31,15 @@ public class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbContext(
              .WithMany()
              .HasForeignKey(x => x.UserId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<OutboxMessage>(e =>
+        {
+            e.ToTable("outbox_messages");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Type).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Payload).HasColumnType("jsonb");
+            e.HasIndex(x => x.ProcessedAt);
         });
     }
 }

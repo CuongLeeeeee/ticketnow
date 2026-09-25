@@ -21,9 +21,14 @@ builder.Services.AddRateLimiter(o =>
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
+builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
+    .WithOrigins("http://localhost:5005")
+    .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+
 var app = builder.Build();
 
 app.UseRateLimiter();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 

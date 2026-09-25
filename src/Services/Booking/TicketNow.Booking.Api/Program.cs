@@ -31,6 +31,8 @@ builder.Services.AddTicketNowJwt(builder.Configuration);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton<WaitingRoomStore>();
+builder.Services.AddHostedService<WaitingRoomAdmitter>();
 
 var app = builder.Build();
 
@@ -59,7 +61,8 @@ orders.MapPost("", async (
     BookingDbContext db,
     InventoryStore inventory,
     IdempotencyStore idempotency,
-    ILogger<Program> log) =>
+    ILogger<Program> log,
+    WaitingRoomStore waitingRoom) =>
 {
     var userId = GetUserId(principal);
 
@@ -99,6 +102,19 @@ orders.MapPost("", async (
     if (stock.Values.Any(s => s.SalesStartAt > DateTimeOffset.UtcNow))
         return await Fail(Results.Conflict("Chưa tới giờ mở bán"));
 
+    var eventId = stock.Values.First().EventId;
+    var wrConfig = await waitingRoom.GetConfigAsync(eventId);
+    if (wrConfig is { Enabled: true } && !await waitingRoom.IsAdmittedAsync(eventId, userId))
+    {
+        var status = await waitingRoom.StatusAsync(eventId, userId);
+        return await Fail(Results.Json(new
+        {
+            error = "Bạn cần xếp hàng trước khi đặt vé",
+            state = status.State.ToString(),
+            position = status.Position,
+            queueLength = status.QueueLength
+        }, statusCode: StatusCodes.Status403Forbidden));
+    }
     // ---- 3. Giữ vé trên Redis (nguyên tử) ----
     var lines = req.Items
         .Select(i => (i.TicketTypeId, i.Quantity, stock[i.TicketTypeId].MaxPerUser))
@@ -226,6 +242,41 @@ adminInventory.MapGet("/{ticketTypeId:guid}", async (Guid ticketTypeId, BookingD
     });
 });
 
+var waitingRoomApi = app.MapGroup("/api/waiting-room").RequireAuthorization("authenticated");
+
+waitingRoomApi.MapPost("/{eventId:guid}/join", async (Guid eventId, ClaimsPrincipal principal, WaitingRoomStore store) =>
+{
+    var cfg = await store.GetConfigAsync(eventId);
+    if (cfg is not { Enabled: true })
+        return Results.Ok(new { state = "Disabled", position = 0, queueLength = 0 });
+
+    var s = await store.JoinAsync(eventId, GetUserId(principal));
+    return Results.Ok(new { state = s.State.ToString(), position = s.Position, queueLength = s.QueueLength });
+});
+
+waitingRoomApi.MapGet("/{eventId:guid}/status", async (Guid eventId, ClaimsPrincipal principal, WaitingRoomStore store) =>
+{
+    var cfg = await store.GetConfigAsync(eventId);
+    if (cfg is not { Enabled: true })
+        return Results.Ok(new { state = "Disabled", position = 0, queueLength = 0, etaSeconds = 0 });
+
+    var s = await store.StatusAsync(eventId, GetUserId(principal));
+    var eta = s.State == WaitingRoomState.Waiting && cfg.AdmitPerTick > 0
+        ? (long)Math.Ceiling((double)s.Position / cfg.AdmitPerTick)
+        : 0;
+
+    return Results.Ok(new { state = s.State.ToString(), position = s.Position, queueLength = s.QueueLength, etaSeconds = eta });
+});
+
+var adminWaitingRoom = app.MapGroup("/api/admin/waiting-room").RequireAuthorization("admin");
+
+adminWaitingRoom.MapPost("/{eventId:guid}", async (Guid eventId, WaitingRoomSettings req, WaitingRoomStore store) =>
+{
+    if (req.Enabled) await store.EnableAsync(eventId, Math.Max(1, req.AdmitPerTick), Math.Max(30, req.AdmitTtlSeconds));
+    else await store.DisableAsync(eventId);
+    return Results.Ok(await store.GetConfigAsync(eventId));
+});
+
 app.Run();
 
 // ================= HELPERS =================
@@ -251,3 +302,4 @@ record PlaceOrderItem(Guid TicketTypeId, int Quantity);
 record OrderItemDto(Guid TicketTypeId, int Quantity, decimal UnitPrice);
 record OrderDto(Guid Id, Guid EventId, string Status, decimal TotalAmount, string Currency,
     DateTimeOffset ExpiresAt, DateTimeOffset CreatedAt, List<OrderItemDto> Items);
+record WaitingRoomSettings(bool Enabled, int AdmitPerTick, int AdmitTtlSeconds);

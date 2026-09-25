@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>TicketNow — thông báo realtime</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 16px; }
+    input, button { font: inherit; padding: 8px; }
+    input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+    #status { padding: 8px 12px; border-radius: 6px; background: #F1EFE8; display: inline-block; }
+    .item { border-left: 3px solid #1D9E75; padding: 8px 12px; margin: 12px 0; background: #F1EFE8; }
+    .item small { color: #5F5E5A; }
+  </style>
+</head>
+<body>
+  <h1>Thông báo realtime</h1>
+  <input id="token" placeholder="Dán access token vào đây">
+  <input id="url" value="/hubs/notifications">
+  <button onclick="connect()">Kết nối</button>
+  <p id="status">Chưa kết nối</p>
+  <div id="list"></div>
+
+  <script>
+    let conn;
+    async function connect() {
+      const token = document.getElementById('token').value.trim();
+      if (!token) return alert('Cần access token');
+      if (conn) await conn.stop();
+
+      conn = new signalR.HubConnectionBuilder()
+        .withUrl(document.getElementById('url').value, { accessTokenFactory: () => token })
+        .withAutomaticReconnect()
+        .build();
+
+      conn.on('notification', n => {
+        const el = document.createElement('div');
+        el.className = 'item';
+        el.innerHTML = `<strong>${n.title}</strong><br>${n.message}<br>
+                        <small>${n.kind} · ${new Date(n.createdAt).toLocaleTimeString('vi-VN')}</small>`;
+        document.getElementById('list').prepend(el);
+      });
+
+      conn.onreconnecting(() => setStatus('Đang kết nối lại...'));
+      conn.onreconnected(() => setStatus('Đã kết nối'));
+      conn.onclose(() => setStatus('Mất kết nối'));
+
+      try { await conn.start(); setStatus('Đã kết nối'); }
+      catch (e) { setStatus('Lỗi: ' + e.message); }
+    }
+    function setStatus(t) { document.getElementById('status').textContent = t; }
+  </script>
+</body>
+</html>

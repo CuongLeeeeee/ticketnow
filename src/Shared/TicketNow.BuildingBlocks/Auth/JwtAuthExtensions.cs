@@ -8,7 +8,7 @@ namespace TicketNow.BuildingBlocks.Auth;
 
 public static class JwtAuthExtensions
 {
-    public static IServiceCollection AddTicketNowJwt(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddTicketNowJwt(this IServiceCollection services, IConfiguration config, Action<JwtBearerOptions>? configure = null)
     {
         var jwt = config.GetSection(JwtOptions.Section).Get<JwtOptions>()
                   ?? throw new InvalidOperationException("Thiếu cấu hình Jwt");
@@ -33,6 +33,7 @@ public static class JwtAuthExtensions
                     NameClaimType = "sub",
                     RoleClaimType = "role"
                 };
+                configure?.Invoke(o);
             });
 
         services.AddAuthorizationBuilder()

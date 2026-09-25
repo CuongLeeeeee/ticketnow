@@ -6,6 +6,8 @@ using TicketNow.BuildingBlocks.Auth;
 using TicketNow.Identity.Api.Domain;
 using TicketNow.Identity.Api.Persistence;
 using TicketNow.Identity.Api.Security;
+using TicketNow.BuildingBlocks.Messaging;
+using TicketNow.Contracts.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +19,8 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddTicketNowJwt(builder.Configuration);
+builder.Services.AddTicketNowMessaging(builder.Configuration, "identity");
+builder.Services.AddOutboxPublisher<AuthDbContext>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -54,6 +58,7 @@ auth.MapPost("/register", async (RegisterRequest req, AuthDbContext db, IPasswor
     user.PasswordHash = hasher.HashPassword(user, req.Password);
 
     db.Users.Add(user);
+    db.OutboxMessages.Add(OutboxMessage.From(new UserRegistered(user.Id, user.Email, user.FullName, user.Role)));
     await db.SaveChangesAsync();
     return Results.Created("/api/auth/me", new { user.Id, user.Email });
 });
@@ -144,6 +149,7 @@ static async Task SeedAdminAsync(AuthDbContext db, IPasswordHasher<User> hasher,
     var admin = new User { Email = email, FullName = "Administrator", Role = Roles.Admin };
     admin.PasswordHash = hasher.HashPassword(admin, password);
     db.Users.Add(admin);
+    db.OutboxMessages.Add(OutboxMessage.From(new UserRegistered(admin.Id, admin.Email, admin.FullName, admin.Role)));
     await db.SaveChangesAsync();
 }
 
