@@ -8,6 +8,7 @@ using TicketNow.BuildingBlocks.Auth;
 using TicketNow.BuildingBlocks.Messaging;
 using TicketNow.Notification.Api.Hubs;
 using TicketNow.Notification.Api.Services;
+using TicketNow.BuildingBlocks.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +17,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer
 builder.Services.AddSingleton<UserDirectory>();
 builder.Services.AddSingleton<EmailSender>();
 builder.Services.AddSingleton<NotificationDispatcher>();
-
+builder.Services.AddTicketNowTelemetry(builder.Configuration, "notification", withRedis: true);
 builder.Services.AddTicketNowJwt(builder.Configuration, o =>
 {
     o.Events = new JwtBearerEvents

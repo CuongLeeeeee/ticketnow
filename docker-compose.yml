@@ -66,6 +66,91 @@ services:
       - "16686:16686"
       - "4317:4317"
       - "4318:4318"
+  gateway:
+    profiles: ["app"]
+    build:
+      context: .
+      args: { PROJECT: src/ApiGateway/TicketNow.Gateway, DLL: TicketNow.Gateway.dll }
+    environment:
+      <<: &common
+        ASPNETCORE_ENVIRONMENT: Development
+        Jwt__Issuer: ticketnow-identity
+        Jwt__Audience: ticketnow-api
+        Jwt__SigningKey: ${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is missing from .env}
+        Otlp__Endpoint: http://jaeger:4317
+        RabbitMq__Host: rabbitmq
+        RabbitMq__Username: ticketnow
+        RabbitMq__Password: ticketnow
+      ReverseProxy__Clusters__identity__Destinations__d1__Address: http://identity:8080/
+      ReverseProxy__Clusters__catalog__Destinations__d1__Address: http://catalog:8080/
+      ReverseProxy__Clusters__booking__Destinations__d1__Address: http://booking:8080/
+      ReverseProxy__Clusters__payment__Destinations__d1__Address: http://payment:8080/
+      ReverseProxy__Clusters__notification__Destinations__d1__Address: http://notification:8080/
+      RateLimit__LoginPerMinute: 20
+    ports: ["5000:8080"]
+    depends_on: [identity, catalog, booking, payment, notification]
+
+  identity:
+    profiles: ["app"]
+    build:
+      context: .
+      args: { PROJECT: src/Services/Identity/TicketNow.Identity.Api, DLL: TicketNow.Identity.Api.dll }
+    environment:
+      <<: *common
+      ConnectionStrings__Postgres: Host=postgres;Database=ticketnow_identity;Username=ticketnow;Password=ticketnow
+      SeedAdmin__Email: admin@ticketnow.local
+      SeedAdmin__Password: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD is missing from .env}
+    depends_on: &infra
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  catalog:
+    profiles: ["app"]
+    build:
+      context: .
+      args: { PROJECT: src/Services/Catalog/TicketNow.Catalog.Api, DLL: TicketNow.Catalog.Api.dll }
+    environment:
+      <<: *common
+      ConnectionStrings__Postgres: Host=postgres;Database=ticketnow_catalog;Username=ticketnow;Password=ticketnow
+      ConnectionStrings__Redis: redis:6379
+    depends_on: *infra
+
+  booking:
+    profiles: ["app"]
+    build:
+      context: .
+      args: { PROJECT: src/Services/Booking/TicketNow.Booking.Api, DLL: TicketNow.Booking.Api.dll }
+    environment:
+      <<: *common
+      ConnectionStrings__Postgres: Host=postgres;Database=ticketnow_booking;Username=ticketnow;Password=ticketnow
+      ConnectionStrings__Redis: redis:6379
+      Booking__HoldMinutes: 10
+    depends_on: *infra
+
+  payment:
+    profiles: ["app"]
+    build:
+      context: .
+      args: { PROJECT: src/Services/Payment/TicketNow.Payment.Api, DLL: TicketNow.Payment.Api.dll }
+    environment:
+      <<: *common
+      ConnectionStrings__Postgres: Host=postgres;Database=ticketnow_payment;Username=ticketnow;Password=ticketnow
+      Payment__SimulatedFailureRate: 0.2
+    depends_on: *infra
+
+  notification:
+    profiles: ["app"]
+    build:
+      context: .
+      args: { PROJECT: src/Services/Notification/TicketNow.Notification.Api, DLL: TicketNow.Notification.Api.dll }
+    environment:
+      <<: *common
+      ConnectionStrings__Redis: redis:6379
+      Email__Host: mailhog
+      Email__Port: 1025
+    ports: ["5005:8080"]
+    depends_on: *infra
 
 volumes:
   pgdata:

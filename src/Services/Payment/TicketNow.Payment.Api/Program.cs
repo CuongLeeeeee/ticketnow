@@ -6,6 +6,7 @@ using TicketNow.BuildingBlocks.Messaging;
 using TicketNow.Contracts.Payment;
 using TicketNow.Payment.Api.Domain;
 using TicketNow.Payment.Api.Persistence;
+using TicketNow.BuildingBlocks.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,7 +22,7 @@ builder.Services.AddOutboxPublisher<PaymentDbContext>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
-
+builder.Services.AddTicketNowTelemetry(builder.Configuration, "payment", withRedis: true);
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -49,7 +50,7 @@ payments.MapGet("/order/{orderId:guid}", async (Guid orderId, ClaimsPrincipal pr
         : Results.Ok(new { p.Id, p.OrderId, Status = p.Status.ToString(), p.Amount, p.Currency, p.ProviderRef, p.FailureReason, p.ExpiresAt });
 });
 
-// Giả lập cổng thanh toán. Hệ thống thật: redirect sang cổng, cổng gọi webhook về.
+// Simulated payment gateway. A real one would redirect to the provider, which then calls back via webhook.
 payments.MapPost("/{orderId:guid}/pay", async (
     Guid orderId, PayRequest? req, ClaimsPrincipal principal, PaymentDbContext db, IConfiguration config) =>
 {
@@ -57,13 +58,13 @@ payments.MapPost("/{orderId:guid}/pay", async (
     var payment = await db.Payments.AsNoTracking()
         .FirstOrDefaultAsync(p => p.OrderId == orderId && p.UserId == userId);
 
-    // Eventual consistency: OrderPlaced có thể chưa tới kịp
+    // Eventual consistency: OrderPlaced may not have arrived yet
     if (payment is null)
-        return Results.NotFound("Chưa có thông tin thanh toán. Nếu vừa đặt vé, thử lại sau 1–2 giây.");
+        return Results.NotFound("Payment not found yet. If you just placed the order, retry in 1–2 seconds.");
     if (payment.Status != PaymentStatus.Pending)
-        return Results.Conflict($"Thanh toán đang ở trạng thái {payment.Status}");
+        return Results.Conflict($"Payment is in status {payment.Status}");
     if (payment.ExpiresAt <= DateTimeOffset.UtcNow)
-        return Results.Conflict("Đơn đã hết thời gian giữ vé");
+        return Results.Conflict("The order hold has expired");
 
     var failureRate = config.GetValue("Payment:SimulatedFailureRate", 0.2);
     var success = req?.Simulate switch
@@ -76,7 +77,7 @@ payments.MapPost("/{orderId:guid}/pay", async (
 
     var newStatus = success ? PaymentStatus.Succeeded : PaymentStatus.Failed;
     var providerRef = success ? $"SIM-{Guid.NewGuid():N}"[..16] : null;
-    var failureReason = success ? null : "Ngân hàng từ chối giao dịch (giả lập)";
+    var failureReason = success ? null : "Transaction declined by the bank (simulated)";
 
     await using var tx = await db.Database.BeginTransactionAsync();
 
@@ -90,7 +91,7 @@ payments.MapPost("/{orderId:guid}/pay", async (
             .SetProperty(p => p.UpdatedAt, DateTimeOffset.UtcNow));
 
     if (changed == 0)
-        return Results.Conflict("Thanh toán vừa được xử lý hoặc đã bị hủy");
+        return Results.Conflict("Payment was already processed or cancelled");
 
     db.OutboxMessages.Add(success
         ? OutboxMessage.From(new PaymentSucceeded(payment.Id, payment.OrderId, payment.UserId, payment.Amount, payment.Currency, providerRef!))

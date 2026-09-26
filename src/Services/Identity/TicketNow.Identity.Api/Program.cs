@@ -8,7 +8,7 @@ using TicketNow.Identity.Api.Persistence;
 using TicketNow.Identity.Api.Security;
 using TicketNow.BuildingBlocks.Messaging;
 using TicketNow.Contracts.Identity;
-
+using TicketNow.BuildingBlocks.Observability;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<AuthDbContext>(o =>
@@ -25,6 +25,7 @@ builder.Services.AddOutboxPublisher<AuthDbContext>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
+builder.Services.AddTicketNowTelemetry(builder.Configuration, "identity", withRedis: true);
 
 var app = builder.Build();
 
@@ -49,10 +50,10 @@ auth.MapPost("/register", async (RegisterRequest req, AuthDbContext db, IPasswor
 {
     var email = req.Email.Trim().ToLowerInvariant();
     if (!email.Contains('@') || req.Password.Length < 8)
-        return Results.BadRequest("Email không hợp lệ hoặc mật khẩu dưới 8 ký tự");
+        return Results.BadRequest("Invalid email or password shorter than 8 characters");
 
     if (await db.Users.AnyAsync(u => u.Email == email))
-        return Results.Conflict("Email đã được sử dụng");
+        return Results.Conflict("Email is already in use");
 
     var user = new User { Email = email, FullName = req.FullName, Role = Roles.User };
     user.PasswordHash = hasher.HashPassword(user, req.Password);
@@ -89,8 +90,8 @@ auth.MapPost("/refresh", async (RefreshRequest req, AuthDbContext db, TokenServi
     if (stored is null || stored.ExpiresAt <= DateTimeOffset.UtcNow)
         return Results.Unauthorized();
 
-    // Token đã bị dùng rồi mà vẫn có người gửi lại => nghi bị đánh cắp.
-    // Thu hồi TOÀN BỘ phiên của user này, buộc đăng nhập lại.
+    // A token that was already used is being replayed => it may have been stolen.
+    // Revoke ALL of this user's sessions and force a new login.
     if (stored.RevokedAt is not null)
     {
         await db.RefreshTokens
@@ -99,7 +100,7 @@ auth.MapPost("/refresh", async (RefreshRequest req, AuthDbContext db, TokenServi
         return Results.Unauthorized();
     }
 
-    stored.RevokedAt = DateTimeOffset.UtcNow;   // rotation: token cũ chỉ dùng được 1 lần
+    stored.RevokedAt = DateTimeOffset.UtcNow;   // rotation: each refresh token is single-use
     var response = IssueTokens(stored.User, db, tokens, jwt.Value);
     await db.SaveChangesAsync();
     return Results.Ok(response);

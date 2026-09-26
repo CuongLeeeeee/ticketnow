@@ -196,6 +196,11 @@ namespace TicketNow.Booking.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("processed_at");
 
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("trace_parent");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(200)

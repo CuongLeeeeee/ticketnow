@@ -42,6 +42,7 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
             e.Property(x => x.Type).HasMaxLength(200).IsRequired();
             e.Property(x => x.Payload).HasColumnType("jsonb");
             e.HasIndex(x => x.ProcessedAt);
+            e.Property(x => x.TraceParent).HasMaxLength(64);
         });
     }
 }

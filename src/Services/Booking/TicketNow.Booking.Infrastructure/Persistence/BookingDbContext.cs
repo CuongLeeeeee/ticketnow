@@ -34,7 +34,7 @@ public class BookingDbContext(DbContextOptions<BookingDbContext> options) : DbCo
             e.Property(x => x.TotalAmount).HasPrecision(18, 2);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.IdempotencyKey).HasMaxLength(64).IsRequired();
-            e.HasIndex(x => new { x.UserId, x.IdempotencyKey }).IsUnique();   // lớp idempotency thứ hai
+            e.HasIndex(x => new { x.UserId, x.IdempotencyKey }).IsUnique();   // second idempotency layer, backing up Redis
             e.HasIndex(x => new { x.Status, x.ExpiresAt });
             e.HasMany(x => x.Items)
              .WithOne(i => i.Order)
@@ -57,6 +57,7 @@ public class BookingDbContext(DbContextOptions<BookingDbContext> options) : DbCo
             e.Property(x => x.Type).HasMaxLength(200).IsRequired();
             e.Property(x => x.Payload).HasColumnType("jsonb");
             e.HasIndex(x => x.ProcessedAt);
+            e.Property(x => x.TraceParent).HasMaxLength(64);
         });
 
         b.AddInbox();

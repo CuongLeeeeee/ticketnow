@@ -6,9 +6,10 @@ using TicketNow.Catalog.Infrastructure.Persistence;
 using TicketNow.BuildingBlocks.Auth;
 using TicketNow.Contracts.Catalog;
 using TicketNow.BuildingBlocks.Messaging;
+using TicketNow.BuildingBlocks.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
-
+builder.Services.AddTicketNowTelemetry(builder.Configuration, "catalog", withRedis: true);
 builder.Services.AddDbContext<CatalogDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
      .UseSnakeCaseNamingConvention());
@@ -122,20 +123,16 @@ admin.MapPost("/{id:guid}/publish", async (Guid id, CatalogDbContext db, IDistri
 {
     var ev = await db.Events.Include(e => e.TicketTypes).FirstOrDefaultAsync(e => e.Id == id);
     if (ev is null) return Results.NotFound();
-    if (ev.TicketTypes.Count == 0) return Results.BadRequest("Sự kiện chưa có loại vé nào");
+    if (ev.TicketTypes.Count == 0) return Results.BadRequest("The event has no ticket types");
 
     ev.Status = EventStatus.Published;
 
 
     foreach (var tt in ev.TicketTypes)
     {
-        db.OutboxMessages.Add(new OutboxMessage
-        {
-            Type = nameof(TicketTypePublished),
-            Payload = JsonSerializer.Serialize(new TicketTypePublished(
-                tt.Id, ev.Id, tt.Name, tt.Price, tt.Currency,
-                tt.TotalQuantity, tt.MaxPerUser, ev.SalesStartAt))
-        });
+        db.OutboxMessages.Add(OutboxMessage.From(new TicketTypePublished(
+            tt.Id, ev.Id, tt.Name, tt.Price, tt.Currency,
+            tt.TotalQuantity, tt.MaxPerUser, ev.SalesStartAt)));
     }
 
     await db.SaveChangesAsync();

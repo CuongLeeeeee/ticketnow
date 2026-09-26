@@ -16,19 +16,27 @@ public static class MessagingExtensions
     {
         services.AddMassTransit(x =>
         {
-            // Tiền tố tên service cho queue: xem giải thích bên dưới
+            // Prefix queue names with the service name so every service subscribing to an event gets its own queue
             x.SetEndpointNameFormatter(new KebabCaseEndpointNameFormatter(serviceName, false));
             consumers?.Invoke(x);
 
             x.UsingRabbitMq((ctx, cfg) =>
             {
-                cfg.Host(config["RabbitMq:Host"] ?? "localhost", "/", h =>
+                var uri = config["RabbitMq:Uri"];
+                if (!string.IsNullOrWhiteSpace(uri))
                 {
-                    h.Username(config["RabbitMq:Username"] ?? "guest");
-                    h.Password(config["RabbitMq:Password"] ?? "guest");
-                });
+                    cfg.Host(new Uri(uri));
+                }
+                else
+                {
+                    cfg.Host(config["RabbitMq:Host"] ?? "localhost", "/", h =>
+                    {
+                        h.Username(config["RabbitMq:Username"] ?? "guest");
+                        h.Password(config["RabbitMq:Password"] ?? "guest");
+                    });
+                }
 
-                // Lỗi tạm thời => thử lại 3 lần; vẫn lỗi => message vào queue <tên>_error
+                // Transient errors are retried 3 times; after that the message goes to the <queue>_error queue
                 cfg.UseMessageRetry(r => r.Intervals(200, 1000, 5000));
                 cfg.ConfigureEndpoints(ctx);
             });

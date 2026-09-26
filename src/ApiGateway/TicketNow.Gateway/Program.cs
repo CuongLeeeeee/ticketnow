@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using TicketNow.BuildingBlocks.Auth;
+using TicketNow.BuildingBlocks.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,8 @@ builder.Services.AddReverseProxy()
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins("http://localhost:5005")
     .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+
+builder.Services.AddTicketNowTelemetry(builder.Configuration, "gateway", withRedis: true);
 
 var app = builder.Build();
 

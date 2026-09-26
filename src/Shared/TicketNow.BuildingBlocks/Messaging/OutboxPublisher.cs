@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using System.Diagnostics;
 
 namespace TicketNow.BuildingBlocks.Messaging;
 
@@ -25,12 +26,12 @@ public sealed class OutboxPublisher<TDbContext>(
         {
             try
             {
-                // Còn dồn nhiều thì xả liên tục, không chờ tick sau
+                // Keep draining while full batches come back instead of waiting for the next tick
                 while (await PublishBatchAsync(ct) == BatchSize) { }
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                log.LogError(ex, "Outbox {Context}: publish thất bại, sẽ thử lại", typeof(TDbContext).Name);
+                log.LogError(ex, "Outbox {Context}: publish failed, will retry", typeof(TDbContext).Name);
             }
         }
     }
@@ -44,10 +45,10 @@ public sealed class OutboxPublisher<TDbContext>(
         var conn = (NpgsqlConnection)db.Database.GetDbConnection();
         var npgsqlTx = (NpgsqlTransaction)tx.GetDbTransaction();
 
-        // SKIP LOCKED: nhiều instance chạy song song, mỗi instance lấy một lô khác nhau, không ai chờ ai
-        var batch = new List<(Guid Id, string Type, string Payload)>();
+        // SKIP LOCKED: parallel instances each grab a different batch without blocking each other
+        var batch = new List<(Guid Id, string Type, string Payload, string? TraceParent)>();
         await using (var select = new NpgsqlCommand("""
-            SELECT id, type, payload::text FROM outbox_messages
+            SELECT id, type, payload::text, trace_parent FROM outbox_messages
             WHERE processed_at IS NULL
             ORDER BY occurred_at
             LIMIT @limit
@@ -57,7 +58,8 @@ public sealed class OutboxPublisher<TDbContext>(
             select.Parameters.AddWithValue("limit", BatchSize);
             await using var reader = await select.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
-                batch.Add((reader.GetGuid(0), reader.GetString(1), reader.GetString(2)));
+                batch.Add((reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
+                           reader.IsDBNull(3) ? null : reader.GetString(3)));
         }
 
         if (batch.Count == 0) return 0;
@@ -67,14 +69,16 @@ public sealed class OutboxPublisher<TDbContext>(
         {
             if (!registry.TryResolve(m.Type, out var type))
             {
-                log.LogError("Outbox: không nhận ra message type {Type} (id {Id}), bỏ qua", m.Type, m.Id);
+                log.LogError("Outbox: unknown message type {Type} (id {Id}), skipping", m.Type, m.Id);
                 continue;
             }
 
             var message = JsonSerializer.Deserialize(m.Payload, type)!;
 
-            // MessageId = id của dòng outbox. Nếu publish xong mà chết trước khi commit,
-            // lần sau message được gửi lại với CÙNG MessageId => inbox bên nhận nhận ra và bỏ qua
+            using var activity = OutboxActivity.Source.StartActivity(
+                $"outbox publish {m.Type}", ActivityKind.Producer, m.TraceParent);
+            activity?.SetTag("outbox.message_id", m.Id);
+
             await bus.Publish(message, type, Pipe.Execute<PublishContext>(ctx => ctx.MessageId = m.Id), ct);
             published.Add(m.Id);
         }
