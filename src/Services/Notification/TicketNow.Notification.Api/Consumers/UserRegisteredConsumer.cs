@@ -11,12 +11,12 @@ public sealed class UserRegisteredConsumer(UserDirectory directory, EmailSender 
     {
         var m = context.Message;
 
-        // Ghi đè là idempotent sẵn, không cần dedupe
+        // Overwriting is idempotent, so no dedupe is needed
         await directory.SaveAsync(m.UserId, new UserContact(m.Email, m.FullName));
 
-        await email.SendAsync(m.Email, m.FullName, "Chào mừng tới TicketNow",
-            EmailTemplates.Layout("Tài khoản đã sẵn sàng",
-                $"<p>Xin chào <strong>{m.FullName}</strong>,</p><p>Tài khoản của bạn đã được tạo. Chúc bạn săn vé thành công.</p>"),
+        await email.SendAsync(m.Email, m.FullName, "Welcome to TicketNow",
+            EmailTemplates.Layout("Your account is ready",
+                $"<p>Hi <strong>{m.FullName}</strong>,</p><p>Your account has been created. Good luck getting your tickets!</p>"),
             context.CancellationToken);
     }
 }

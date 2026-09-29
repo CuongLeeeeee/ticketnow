@@ -27,7 +27,7 @@ public sealed class NotificationDispatcher(
 
         if (!first)
         {
-            log.LogInformation("Thông báo {MessageId} đã gửi trước đó, bỏ qua", messageId);
+            log.LogInformation("Notification {MessageId} was already sent, skipping", messageId);
             return;
         }
 
@@ -42,7 +42,7 @@ public sealed class NotificationDispatcher(
         var contact = await directory.GetAsync(userId);
         if (contact is null)
         {
-            log.LogWarning("Không có email của user {UserId} — bỏ qua phần gửi mail", userId);
+            log.LogWarning("No email found for user {UserId}, skipping email delivery", userId);
             return;
         }
 

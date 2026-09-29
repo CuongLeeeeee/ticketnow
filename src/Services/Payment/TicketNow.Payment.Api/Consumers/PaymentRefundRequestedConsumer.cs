@@ -29,7 +29,7 @@ public sealed class PaymentRefundRequestedConsumer(PaymentDbContext db, ILogger<
             payment.UpdatedAt = DateTimeOffset.UtcNow;
             db.OutboxMessages.Add(OutboxMessage.From(new PaymentRefunded(
                 payment.Id, payment.OrderId, payment.UserId, payment.Amount, payment.Currency)));
-            log.LogWarning("Đã hoàn {Amount} {Currency} cho order {OrderId}", payment.Amount, payment.Currency, m.OrderId);
+            log.LogWarning("Refunded {Amount} {Currency} for order {OrderId}", payment.Amount, payment.Currency, m.OrderId);
         }
 
         await db.SaveChangesAsync(ct);

@@ -1,184 +1,95 @@
-\# TicketNow
+# TicketNow
 
+An event ticketing system built as .NET 8 microservices.
+It focuses on the flash-sale problem: thousands of users competing for a limited
+number of tickets within seconds, with no overselling and no lost orders.
 
+![Trace in Jaeger](docs/images/jaeger-trace.png)
 
-Hệ thống bán vé sự kiện theo kiến trúc microservices, xây dựng bằng .NET 8.
+## Measured results
 
-Trọng tâm là bài toán flash sale: hàng nghìn người tranh nhau một lượng vé
-
-có hạn trong vài giây, không được phép bán vượt, không được mất đơn.
-
-
-
-!\[Trace trong Jaeger](docs/images/jaeger-trace.png)
-
-
-
-\## Kết quả đo được
-
-
-
-| Chỉ số | Giá trị |
-
+| Metric | Value |
 |---|---|
+| 200 concurrent requests competing for 50 tickets | exactly 50 sold, 0 oversold |
+| p95 booking latency | <your number> ms |
+| Redis data completely lost | inventory is rebuilt from Postgres on startup |
+| RabbitMQ down during booking | 0 events lost, synced automatically once it is back |
 
-| 200 request song song tranh 50 vé | bán đúng 50, 0 oversell |
-
-| p95 thời gian đặt vé | <điền số của bạn> ms |
-
-| Mất toàn bộ Redis | tồn kho tự khôi phục từ Postgres khi khởi động |
-
-| RabbitMQ sập khi đang đặt vé | 0 event bị mất, tự đồng bộ khi bật lại |
-
-
-
-\## Kiến trúc
-
-
+## Architecture
 
 ```mermaid
-
 flowchart TD
-
-&#x20;   C\[Client] --> GW\[API gateway · YARP]
-
-&#x20;   GW --> ID\[Identity]
-
-&#x20;   GW --> CAT\[Catalog]
-
-&#x20;   GW --> BK\[Booking]
-
-&#x20;   GW --> PAY\[Payment]
-
-&#x20;   GW --> NOT\[Notification]
-
-&#x20;   BK <--> R\[(Redis)]
-
-&#x20;   ID --> MQ{{RabbitMQ}}
-
-&#x20;   CAT --> MQ
-
-&#x20;   BK --> MQ
-
-&#x20;   PAY --> MQ
-
-&#x20;   MQ --> BK
-
-&#x20;   MQ --> PAY
-
-&#x20;   MQ --> NOT
-
-&#x20;   NOT -.SignalR.-> C
-
+    C[Client] --> GW[API gateway · YARP]
+    GW --> ID[Identity]
+    GW --> CAT[Catalog]
+    GW --> BK[Booking]
+    GW --> PAY[Payment]
+    GW --> NOT[Notification]
+    BK <--> R[(Redis)]
+    ID --> MQ{{RabbitMQ}}
+    CAT --> MQ
+    BK --> MQ
+    PAY --> MQ
+    MQ --> BK
+    MQ --> PAY
+    MQ --> NOT
+    NOT -.SignalR.-> C
 ```
 
+Each service owns its own Postgres database and never queries another service's
+database. Shared data is synchronized through events.
 
-
-Mỗi service có database Postgres riêng, không service nào truy vấn database
-
-của service khác. Dữ liệu chia sẻ được đồng bộ bằng event.
-
-
-
-\## Chạy thử
-
-
+## Getting started
 
 ```bash
-
 cp .env.example .env
-
 docker compose --profile app up -d --build
-
 ```
 
-
-
-| Thành phần | Địa chỉ |
-
+| Component | URL |
 |---|---|
-
 | API gateway | http://localhost:5000 |
-
-| Trang test realtime | http://localhost:5005 |
-
+| Realtime test page | http://localhost:5005 |
 | Jaeger | http://localhost:16686 |
-
 | RabbitMQ | http://localhost:15672 (ticketnow/ticketnow) |
-
 | MailHog | http://localhost:8025 |
 
+Admin account: `admin@ticketnow.local` / the `SEED_ADMIN_PASSWORD` value in `.env`.
 
+## Technical problems solved
 
-Tài khoản admin: `admin@ticketnow.local` / giá trị `SEED\_ADMIN\_PASSWORD` trong `.env`.
+**Preventing oversell.** Inventory is a Redis counter decremented by a Lua script,
+so checking and decrementing happen atomically. The naive approach (GET, then
+DECRBY from the application) already lets race conditions slip through with a few
+dozen concurrent requests. Postgres has `CHECK (sold <= total)` as the last line
+of defense.
 
+**No lost events (outbox pattern).** Business changes and their events are written
+in the same transaction. A background service reads the outbox table with
+`FOR UPDATE SKIP LOCKED` and publishes to RabbitMQ. If the broker is down, events
+stay in the database until they can be sent.
 
+**Exactly-once processing (inbox pattern).** The outbox guarantees at-least-once
+delivery, so consumers may receive duplicates. Each consumer records the
+`message_id` in an inbox table in the same transaction as its business change;
+duplicate messages are skipped.
 
-\## Những vấn đề kỹ thuật đã giải quyết
+**Side effects outside the database.** Returning tickets to Redis and sending
+emails can't be part of a Postgres transaction, so deduplication happens in Redis
+itself, using `SET NX` inside the Lua script that releases tickets.
 
+**Saga with compensation.** If a payment arrives just after its order expired, the
+system does not issue tickets; it publishes `PaymentRefundRequested` to refund the
+payment automatically.
 
+**Idempotency.** The booking endpoint requires an `Idempotency-Key` header; resending
+the same key returns the original order with an `Idempotent-Replayed` header.
 
-\*\*Chống oversell.\*\* Tồn kho là counter trên Redis, trừ bằng Lua script để việc
+**End-to-end tracing across the message queue.** The `traceparent` is stored with
+each event in the outbox table and restored at publish time, so a single Jaeger
+trace spans from the HTTP request through RabbitMQ to consumers in other services.
 
-kiểm tra và trừ diễn ra nguyên tử. Cách làm ngây thơ (GET rồi DECRBY ở phía
-
-ứng dụng) để lọt race condition ngay ở mức vài chục request song song.
-
-Postgres có `CHECK (sold <= total)` làm chốt chặn cuối.
-
-
-
-\*\*Không mất event (outbox pattern).\*\* Thay đổi nghiệp vụ và event được ghi
-
-trong cùng một transaction. Một background service đọc bảng outbox bằng
-
-`FOR UPDATE SKIP LOCKED` rồi publish lên RabbitMQ. Broker sập thì event nằm
-
-yên trong database chờ gửi lại.
-
-
-
-\*\*Xử lý đúng một lần (inbox pattern).\*\* Outbox đảm bảo at-least-once nên
-
-consumer có thể nhận trùng. Mỗi consumer ghi `message\_id` vào bảng inbox trong
-
-cùng transaction với thay đổi nghiệp vụ; message trùng bị bỏ qua.
-
-
-
-\*\*Side effect ngoài database.\*\* Trả vé về Redis và gửi email không nằm trong
-
-transaction Postgres được, nên cơ chế chống trùng đặt ngay tại Redis bằng
-
-`SET NX` trong chính Lua script trả vé.
-
-
-
-\*\*Saga có bước bù trừ.\*\* Nếu tiền về đúng lúc đơn vừa hết hạn, hệ thống không
-
-giao vé mà phát `PaymentRefundRequested` để hoàn tiền tự động.
-
-
-
-\*\*Idempotency.\*\* Endpoint đặt vé yêu cầu header `Idempotency-Key`; gửi lại
-
-cùng key trả về đúng đơn cũ kèm header `Idempotent-Replayed`.
-
-
-
-\*\*Trace liền mạch qua message queue.\*\* `traceparent` được lưu cùng event trong
-
-bảng outbox và khôi phục lúc publish, nên một trace trong Jaeger chạy suốt từ
-
-request HTTP qua RabbitMQ tới consumer ở service khác.
-
-
-
-\## Công nghệ
-
-
+## Tech stack
 
 .NET 8 · PostgreSQL · Redis · RabbitMQ (MassTransit) · YARP · SignalR ·
-
 OpenTelemetry + Jaeger · Testcontainers · k6 · Docker Compose · GitHub Actions
-

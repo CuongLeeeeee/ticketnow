@@ -15,7 +15,7 @@ public record OrderPlaced(
 
 public record OrderConfirmed(Guid OrderId, Guid UserId, Guid EventId, decimal TotalAmount, string Currency);
 
-// Phát ra mỗi khi đơn rời AwaitingPayment mà KHÔNG thành công => vé phải được trả lại
+// Published whenever an order leaves AwaitingPayment WITHOUT succeeding => its tickets must be returned
 public record OrderReleased(Guid OrderId, Guid UserId, string Reason, IReadOnlyList<OrderLine> Lines);
 
 public record PaymentRefundRequested(Guid OrderId, Guid UserId, string Reason);

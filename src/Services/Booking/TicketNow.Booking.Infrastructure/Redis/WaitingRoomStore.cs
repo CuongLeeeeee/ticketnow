@@ -12,8 +12,8 @@ public sealed class WaitingRoomStore(IConnectionMultiplexer redis)
 {
     private readonly IDatabase _db = redis.GetDatabase();
 
-    // Hash tag {eventId}: mọi key của cùng một sự kiện rơi vào cùng một slot,
-    // nên Lua script vẫn chạy được nếu sau này chuyển sang Redis Cluster
+    // Hash tag {eventId}: all keys of one event land in the same slot,
+    // so the Lua scripts keep working if we move to Redis Cluster
     private static string Tag(Guid eventId) => $"wr:{{{eventId}}}";
     private static RedisKey QueueKey(Guid e) => $"{Tag(e)}:queue";
     private static RedisKey ConfigKey(Guid e) => $"{Tag(e)}:cfg";
@@ -35,7 +35,7 @@ public sealed class WaitingRoomStore(IConnectionMultiplexer redis)
         return {1, rank + 1, redis.call('ZCARD', KEYS[1])}
         """;
 
-    // Bốc N người đầu hàng và cấp vé vào cửa, tất cả trong một khối nguyên tử
+    // Pop the first N users from the queue and grant them admission, atomically
     private const string AdmitScript = """
         local popped = redis.call('ZPOPMIN', KEYS[1], tonumber(ARGV[1]))
         local n = 0

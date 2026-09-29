@@ -20,6 +20,6 @@ public sealed class EmailSender(IConfiguration config, ILogger<EmailSender> log)
         await client.SendAsync(msg, ct);
         await client.DisconnectAsync(true, ct);
 
-        log.LogInformation("Đã gửi email '{Subject}' tới {Email}", subject, toEmail);
+        log.LogInformation("Sent email '{Subject}' to {Email}", subject, toEmail);
     }
 }

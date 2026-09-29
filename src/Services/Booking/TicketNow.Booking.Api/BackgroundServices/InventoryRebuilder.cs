@@ -34,7 +34,7 @@ public sealed class InventoryRebuilder(
         foreach (var h in held)
             await store.InitUserHeldAsync(h.TicketTypeId, h.UserId, h.Qty, overwrite: false);
 
-        log.LogInformation("Inventory rebuild: {Restored}/{Total} counter được khôi phục từ Postgres",
+        log.LogInformation("Inventory rebuild: restored {Restored}/{Total} counters from Postgres",
             restored, items.Count);
     }
 

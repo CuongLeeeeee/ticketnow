@@ -14,13 +14,13 @@ public sealed class PaymentRefundedConsumer(NotificationDispatcher dispatcher) :
         await dispatcher.SendAsync(
             context.MessageId!.Value, m.UserId,
             new NotificationPayload("PaymentRefunded", m.OrderId,
-                "Đã hoàn tiền", $"Số tiền {amount} đang được hoàn về tài khoản của bạn.", DateTimeOffset.UtcNow),
-            "Thông báo hoàn tiền",
-            EmailTemplates.Layout("Đã hoàn tiền", $"""
-                <p>Đơn hàng không thể hoàn tất nên chúng tôi đã hoàn lại tiền.</p>
-                <p><strong>Mã đơn:</strong> {m.OrderId}<br>
-                   <strong>Số tiền:</strong> {amount}</p>
-                <p>Tiền về tài khoản trong 3–5 ngày làm việc.</p>
+                "Refund issued", $"{amount} is being refunded to your account.", DateTimeOffset.UtcNow),
+            "Refund notice",
+            EmailTemplates.Layout("Refund issued", $"""
+                <p>Your order could not be completed, so we have refunded your payment.</p>
+                <p><strong>Order ID:</strong> {m.OrderId}<br>
+                   <strong>Amount:</strong> {amount}</p>
+                <p>The funds should reach your account within 3–5 business days.</p>
                 """, "#BA7517"),
             context.CancellationToken);
     }

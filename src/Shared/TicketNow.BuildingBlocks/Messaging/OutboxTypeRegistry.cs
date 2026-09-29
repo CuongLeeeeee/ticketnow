@@ -5,7 +5,7 @@ namespace TicketNow.BuildingBlocks.Messaging;
 
 public sealed class OutboxTypeRegistry(Assembly contractsAssembly)
 {
-    // Trùng tên giữa hai namespace sẽ làm ToDictionary ném lỗi ngay lúc khởi động — cố ý
+    // Duplicate type names across namespaces make ToDictionary throw at startup, on purpose
     private readonly Dictionary<string, Type> _types = contractsAssembly.GetExportedTypes()
         .Where(t => t is { IsClass: true, IsAbstract: false })
         .ToDictionary(t => t.Name);

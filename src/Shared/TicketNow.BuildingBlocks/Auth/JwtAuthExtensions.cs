@@ -11,10 +11,10 @@ public static class JwtAuthExtensions
     public static IServiceCollection AddTicketNowJwt(this IServiceCollection services, IConfiguration config, Action<JwtBearerOptions>? configure = null)
     {
         var jwt = config.GetSection(JwtOptions.Section).Get<JwtOptions>()
-                  ?? throw new InvalidOperationException("Thiếu cấu hình Jwt");
+                  ?? throw new InvalidOperationException("Missing Jwt configuration");
 
         if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
-            throw new InvalidOperationException("Jwt:SigningKey phải dài tối thiểu 32 byte");
+            throw new InvalidOperationException("Jwt:SigningKey must be at least 32 bytes long");
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(o =>

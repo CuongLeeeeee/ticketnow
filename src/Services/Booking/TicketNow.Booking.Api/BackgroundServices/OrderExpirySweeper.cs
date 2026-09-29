@@ -16,11 +16,11 @@ public sealed class OrderExpirySweeper(IServiceScopeFactory scopes, ILogger<Orde
             try
             {
                 var count = await SweepAsync(ct);
-                if (count > 0) log.LogInformation("Đã chuyển {Count} đơn sang Expired", count);
+                if (count > 0) log.LogInformation("Marked {Count} orders as Expired", count);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                log.LogError(ex, "Quét đơn hết hạn thất bại");
+                log.LogError(ex, "Expired order sweep failed");
             }
         }
     }

@@ -14,6 +14,6 @@ public sealed class OrderReleasedConsumer(InventoryStore inventory, ILogger<Orde
             m.OrderId, m.UserId, m.Lines.Select(l => (l.TicketTypeId, l.Quantity)));
 
         if (!released)
-            log.LogInformation("Order {OrderId} đã được trả vé trước đó, bỏ qua message trùng", m.OrderId);
+            log.LogInformation("Order {OrderId} tickets were already released, skipping duplicate message", m.OrderId);
     }
 }

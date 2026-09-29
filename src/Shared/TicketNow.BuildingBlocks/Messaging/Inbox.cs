@@ -16,14 +16,14 @@ public static class InboxExtensions
         b.Entity<InboxMessage>(e =>
         {
             e.ToTable("inbox_messages");
-            // Khóa kép: cùng một message có thể được NHIỀU consumer trong service xử lý
+            // Composite key: the same message can be handled by SEVERAL consumers in one service
             e.HasKey(x => new { x.MessageId, x.Consumer });
             e.Property(x => x.Consumer).HasMaxLength(200);
         });
         return b;
     }
 
-    /// <summary>Gọi BÊN TRONG transaction của consumer. Trả false nếu message này đã xử lý rồi.</summary>
+    /// <summary>Call INSIDE the consumer's transaction. Returns false if this message was already handled.</summary>
     public static async Task<bool> TryRegisterInboxAsync(
         this DbContext db, Guid messageId, string consumer, CancellationToken ct = default)
     {

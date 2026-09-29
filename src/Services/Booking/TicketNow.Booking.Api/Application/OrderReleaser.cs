@@ -8,8 +8,8 @@ namespace TicketNow.Booking.Api.Application;
 public static class OrderReleaser
 {
     /// <summary>
-    /// AwaitingPayment -> target, kèm OrderReleased vào outbox.
-    /// Người gọi tự mở transaction và SaveChanges.
+    /// AwaitingPayment -> target, and adds OrderReleased to the outbox.
+    /// The caller owns the transaction and calls SaveChanges.
     /// </summary>
     public static async Task<bool> TryReleaseAsync(
         BookingDbContext db, Guid orderId, OrderStatus target, string reason, CancellationToken ct)

@@ -40,7 +40,7 @@ public sealed class PaymentSucceededConsumer(BookingDbContext db, ILogger<Paymen
         else
         {
             // Funds received but the order has expired/been cancelled => Saga reconciliation step: refund.
-            log.LogWarning("Order {OrderId} không còn chờ thanh toán khi tiền về, yêu cầu hoàn tiền", m.OrderId);
+            log.LogWarning("Order {OrderId} was no longer awaiting payment when the payment arrived, requesting a refund", m.OrderId);
             db.OutboxMessages.Add(OutboxMessage.From(
                 new PaymentRefundRequested(m.OrderId, m.UserId, "OrderNoLongerAwaitingPayment")));
         }

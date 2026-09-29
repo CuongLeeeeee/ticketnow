@@ -11,9 +11,9 @@ public sealed class InventoryStore(IConnectionMultiplexer redis)
     private static RedisKey AvailableKey(Guid ticketTypeId) => $"inv:{ticketTypeId}";
     private static RedisKey UserKey(Guid ticketTypeId, Guid userId) => $"inv:user:{ticketTypeId}:{userId}";
 
-    // KEYS[2i-1] = số vé còn lại, KEYS[2i] = số vé user này đang giữ
-    // ARGV[2i-1] = số lượng muốn mua, ARGV[2i] = giới hạn mỗi người
-    // Vòng 1 chỉ KIỂM TRA, vòng 2 mới TRỪ => tất cả hoặc không gì cả
+    // KEYS[2i-1] = tickets available, KEYS[2i] = tickets this user already holds
+    // ARGV[2i-1] = requested quantity, ARGV[2i] = per-user limit
+    // Pass 1 only CHECKS, pass 2 DEDUCTS => all or nothing
     private const string ReserveScript = """
         local n = #KEYS / 2
         for i = 1, n do
@@ -32,9 +32,10 @@ public sealed class InventoryStore(IConnectionMultiplexer redis)
         return {1, 0}
         """;
 
-        // KEYS[1] = released:{orderId}   ARGV[1] = TTL (giây)
-        // KEYS[2i] = inv:{tt}, KEYS[2i+1] = inv:user:{tt}:{user}   ARGV[i+1] = số lượng
-        private const string ReleaseOnceScript = """
+    // Guarded by SET NX on released:{orderId} so an order's tickets are returned at most once
+    // KEYS[1] = released:{orderId}   ARGV[1] = TTL (seconds)
+    // KEYS[2i] = inv:{tt}, KEYS[2i+1] = inv:user:{tt}:{user}   ARGV[i+1] = quantity
+    private const string ReleaseOnceScript = """
         if not redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then return 0 end
         local n = (#KEYS - 1) / 2
         for i = 1, n do
@@ -61,7 +62,7 @@ public sealed class InventoryStore(IConnectionMultiplexer redis)
 
         var raw = (RedisResult[])(await _db.ScriptEvaluateAsync(ReserveScript, keys, args))!;
         var code = (int)raw[0];
-        var failedIndex = (int)raw[1] - 1;   // Lua đếm từ 1
+        var failedIndex = (int)raw[1] - 1;   // Lua indexes from 1
 
         return code switch
         {

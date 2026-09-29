@@ -19,12 +19,12 @@ public sealed class WaitingRoomAdmitter(WaitingRoomStore store, ILogger<WaitingR
 
                     var admitted = await store.AdmitAsync(eventId, cfg.AdmitPerTick, cfg.AdmitTtlSeconds);
                     if (admitted > 0)
-                        log.LogInformation("Waiting room {EventId}: cho {Count} người vào", eventId, admitted);
+                        log.LogInformation("Waiting room {EventId}: admitted {Count} users", eventId, admitted);
                 }
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                log.LogError(ex, "Waiting room admitter lỗi");
+                log.LogError(ex, "Waiting room admitter failed");
             }
         }
     }

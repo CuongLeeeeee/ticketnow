@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>TicketNow — thông báo realtime</title>
+  <title>TicketNow — realtime notifications</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 16px; }
@@ -14,18 +14,18 @@
   </style>
 </head>
 <body>
-  <h1>Thông báo realtime</h1>
-  <input id="token" placeholder="Dán access token vào đây">
+  <h1>Realtime notifications</h1>
+  <input id="token" placeholder="Paste an access token here">
   <input id="url" value="/hubs/notifications">
-  <button onclick="connect()">Kết nối</button>
-  <p id="status">Chưa kết nối</p>
+  <button onclick="connect()">Connect</button>
+  <p id="status">Not connected</p>
   <div id="list"></div>
 
   <script>
     let conn;
     async function connect() {
       const token = document.getElementById('token').value.trim();
-      if (!token) return alert('Cần access token');
+      if (!token) return alert('An access token is required');
       if (conn) await conn.stop();
 
       conn = new signalR.HubConnectionBuilder()
@@ -37,16 +37,16 @@
         const el = document.createElement('div');
         el.className = 'item';
         el.innerHTML = `<strong>${n.title}</strong><br>${n.message}<br>
-                        <small>${n.kind} · ${new Date(n.createdAt).toLocaleTimeString('vi-VN')}</small>`;
+                        <small>${n.kind} · ${new Date(n.createdAt).toLocaleTimeString('en-US')}</small>`;
         document.getElementById('list').prepend(el);
       });
 
-      conn.onreconnecting(() => setStatus('Đang kết nối lại...'));
-      conn.onreconnected(() => setStatus('Đã kết nối'));
-      conn.onclose(() => setStatus('Mất kết nối'));
+      conn.onreconnecting(() => setStatus('Reconnecting...'));
+      conn.onreconnected(() => setStatus('Connected'));
+      conn.onclose(() => setStatus('Disconnected'));
 
-      try { await conn.start(); setStatus('Đã kết nối'); }
-      catch (e) { setStatus('Lỗi: ' + e.message); }
+      try { await conn.start(); setStatus('Connected'); }
+      catch (e) { setStatus('Error: ' + e.message); }
     }
     function setStatus(t) { document.getElementById('status').textContent = t; }
   </script>

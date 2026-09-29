@@ -14,7 +14,7 @@ public sealed class TicketTypePublishedConsumer(BookingDbContext db, InventorySt
         var m = context.Message;
         var ct = context.CancellationToken;
 
-        // Upsert vốn đã idempotent: nhận 2 lần thì kết quả vẫn y hệt => không cần inbox
+        // An upsert is already idempotent: applying it twice gives the same result, so no inbox is needed
         var item = await db.Inventory.FindAsync([m.TicketTypeId], ct);
         if (item is null)
         {

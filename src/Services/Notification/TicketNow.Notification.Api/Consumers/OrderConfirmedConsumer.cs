@@ -14,13 +14,13 @@ public sealed class OrderConfirmedConsumer(NotificationDispatcher dispatcher) : 
         await dispatcher.SendAsync(
             context.MessageId!.Value, m.UserId,
             new NotificationPayload("OrderConfirmed", m.OrderId,
-                "Đặt vé thành công", $"Đơn hàng {amount} đã được xác nhận.", DateTimeOffset.UtcNow),
-            "Vé của bạn đã được xác nhận",
-            EmailTemplates.Layout("Đặt vé thành công", $"""
-                <p>Đơn hàng của bạn đã được thanh toán và xác nhận.</p>
-                <p><strong>Mã đơn:</strong> {m.OrderId}<br>
-                   <strong>Tổng tiền:</strong> {amount}</p>
-                <p>Vui lòng mang mã đơn tới cổng soát vé.</p>
+                "Booking confirmed", $"Your {amount} order has been confirmed.", DateTimeOffset.UtcNow),
+            "Your tickets are confirmed",
+            EmailTemplates.Layout("Booking confirmed", $"""
+                <p>Your order has been paid and confirmed.</p>
+                <p><strong>Order ID:</strong> {m.OrderId}<br>
+                   <strong>Total:</strong> {amount}</p>
+                <p>Please show your order ID at the entrance.</p>
                 """),
             context.CancellationToken);
     }

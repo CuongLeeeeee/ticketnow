@@ -16,7 +16,7 @@ public sealed class IdempotencyStore(IConnectionMultiplexer redis)
 
     public async Task<(IdempotencyState State, StoredResponse? Response)> TryBeginAsync(Guid userId, string key)
     {
-        // Đặt cờ "đang xử lý" với TTL 30s: nếu service chết giữa chừng, cờ tự hết hạn
+        // Set an "in progress" flag with a 30s TTL so it expires on its own if the service dies mid-request
         if (await _db.StringSetAsync(Key(userId, key), Processing, TimeSpan.FromSeconds(30), When.NotExists))
             return (IdempotencyState.Started, null);
 
